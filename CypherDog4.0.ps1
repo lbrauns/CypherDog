@@ -466,25 +466,45 @@ Function New-CypherDogSession {
    Invoke-Neo4jCypher "MATCH (x:User) RETURN x.name"  
 #>
 function Invoke-Neo4jCypher {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'DefaultOutput')]
     [Alias('Neo', 'Cypher')]
     Param(
         # Cypher Queries
-        [Parameter(Mandatory = 1, ValueFromPipeline = 1)][Alias('Statement')][String[]]$Query,
+        
+        [Parameter(
+            Position = 0,
+            Mandatory = 1, 
+            ValueFromPipeline = 1)]
+        [Alias('Statement')]
+        [String[]]$Query,
         # Output Raw Result
-        [Parameter(Mandatory = 0)][Switch]$Raw,
+        [Parameter(Mandatory = 0,ParameterSetName = 'DefaultOutput')]
+        [Switch]$DefaultOutput,
+        # Output Raw Result
+        [Parameter(Mandatory = 0,ParameterSetName = 'RawOutput')]
+        [Switch]$Raw,
+        # Output Result as object
+        [Parameter(Mandatory = 0, ParameterSetName = 'FormatOutput')]
+        [Switch]$FormatOutput,
         # Include Stats
-        [Parameter(Mandatory = 0)][Switch]$IncludeStats,
+        [Parameter(Mandatory = 0)]
+        [Switch]$IncludeStats,
         # Host
-        [Parameter(Mandatory = 0)][Alias('Host')][String]$Server,
+        [Parameter(Mandatory = 0)]
+        [Alias('Host')]
+        [String]$Server,
         # Port
-        [Parameter(Mandatory = 0)][String]$Port,
+        [Parameter(Mandatory = 0)]
+        [String]$Port,
         # DB Name
-        [Parameter(Mandatory = 0)][String]$Database,
+        [Parameter(Mandatory = 0)]
+        [String]$Database,
         # Creds
-        [Parameter(Mandatory = 0)][PSCredential]$CredentialObject,
+        [Parameter(Mandatory = 0)]
+        [PSCredential]$CredentialObject,
         # Use https
-        [Parameter(Mandatory = 0)][Switch]$https
+        [Parameter(Mandatory = 0)]
+        [Switch]$https
     )
     Begin {
         # URI
@@ -524,10 +544,33 @@ function Invoke-Neo4jCypher {
             if ($Oops.ErrorDetails) { $OopsMsg = ($Oops.ErrorDetails | ConvertFrom-Json).Errors.Message }
             if ($OopsMsg) { Write-Warning $OopsMsg }else { Write-Error $Oops }
         }
-        # OUTPUT & ERRORS
-        if ($Reply.Errors.count) { Write-Warning $Reply.errors.message }
-        if ($Raw) { $Reply.results }
-        else { $Reply.results.data.row }
+        # OUTPUT & ERRORS6
+        if ($Reply.Errors.count) {
+            Write-Warning $Reply.errors.message
+        }
+        elseif ($Raw) {
+            $Reply.results
+        }
+        elseif ($FormatOutput) {
+            $ResultObject = New-Object System.Collections.ArrayList
+
+            foreach ( $row in $reply.results.data.row ) {
+                $GraphObject = New-Object PSCustomObject -Property @{
+                    #if i understood the node weight correctly, we'll have all relationships in the response, 
+                    #so we are only really interested in the first object (source) and the last object (target) with the last relationship (edge)
+                    Source = $row[0]
+                    Edge   = $row[$row.length -2]
+                    Target = $row[$row.length -1]
+                }
+
+                $null = $ResultObject.Add($GraphObject)
+            }
+
+            return $ResultObject
+        }
+        else {
+            $Reply.results.data.row
+        }
     }
 }
 #####End
